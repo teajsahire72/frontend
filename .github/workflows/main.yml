@@ -30,8 +30,6 @@ jobs:
           mkdir -p ~/.aws
           echo "${{ secrets.aws_credentials}}" > ~/.aws/credentials 
           echo "${{ secrets.aws_config}}" > ~/.aws/config 
-          
-
 
       - name: Deploy to EC2 with Auto Rollback
         run: |
@@ -49,7 +47,7 @@ jobs:
             TIMESTAMP=$(date +%F-%T)
             sudo cp -r $APP_DIR $BACKUP_DIR/html_backup_$TIMESTAMP
 
-            # Keep only last 5 backups
+            #last 2 backups
             sudo ls -dt $BACKUP_DIR/* | tail -n +3 | xargs rm -rf || true
 
             # Step 2: Deploy New Version
@@ -68,7 +66,16 @@ jobs:
             npm run build
 
             sudo cp -r build/* $TEMP_DIR/
-            sudo mv $TEMP_DIR/* $APP_DIR/
+
+            # Ensure proper permissions
+            sudo chown -R www-data:www-data $TEMP_DIR
+
+            # Remove old static assets before deploying
+            sudo rm -rf $APP_DIR/static
+
+            # Use rsync to avoid issues with moving directories
+            sudo rsync -av --delete $TEMP_DIR/ $APP_DIR/
+
             sudo systemctl reload nginx
 
             # Step 3: Health Check (Fail Fast)
@@ -77,7 +84,7 @@ jobs:
             
             if [ "$STATUS_CODE" -ne 200 ]; then
               echo "Deployment failed! Rolling back..."
-              sudo cp -r $BACKUP_DIR/html_backup_$TIMESTAMP $APP_DIR
+              sudo rsync -av --delete $BACKUP_DIR/html_backup_$TIMESTAMP/ $APP_DIR/
               sudo systemctl reload nginx
               exit 1
             fi
