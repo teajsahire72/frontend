@@ -15,7 +15,7 @@ function Home() {
 	users.refetch();//refetch the query when redirecting
 	
 	const handleDelete = async (userid) => {
-		const resp = window.confirm("Are you sure to delete this User?");
+		const resp = window.confirm("Are you sure to delete this User ?");
 		if (!resp) return;
 		try{
 			await deleteUser({variables:{id:userid}});
@@ -70,7 +70,7 @@ function Home() {
 				</tbody>
 			</Table>
 			<Link  to='/create'>
-                <Button variant="primary" size="md">Create</Button>
+                <Button variant="primary" size="md">Add</Button>
             </Link>
 		</div>
 	);
