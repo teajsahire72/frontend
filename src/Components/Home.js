@@ -70,7 +70,7 @@ function Home() {
 				</tbody>
 			</Table>
 			<Link  to='/create'>
-                <Button variant="primary" size="md">Add</Button>
+                <Button variant="primary" size="md">Create</Button>
             </Link>
 		</div>
 	);
