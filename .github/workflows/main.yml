@@ -1,0 +1,93 @@
+name: Deploy to Remote Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      rollback_version:
+        description: "Enter backup version (e.g., 2025-02-07-12:30:00) to rollback"
+        required: false
+        default: "latest"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.REMOTE_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Set up AWS
+        run: |
+          mkdir -p ~/.aws
+          echo "${{ secrets.aws_credentials}}" > ~/.aws/credentials 
+          echo "${{ secrets.aws_config}}" > ~/.aws/config 
+
+      - name: Deploy to EC2 with Auto Rollback
+        run: |
+          ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
+            set -e  # Exit immediately if any command fails
+
+            APP_DIR="/var/www/html"
+            BACKUP_DIR="/var/www/backups"
+            TEMP_DIR="/var/www/temp_build"
+            HEALTHCHECK_URL="http://localhost"  # Replace with actual health check URL
+
+            sudo mkdir -p $BACKUP_DIR
+            
+            # Step 1: Backup the current version
+            TIMESTAMP=$(date +%F-%T)
+            sudo cp -r $APP_DIR $BACKUP_DIR/html_backup_$TIMESTAMP
+
+            #last 2 backups
+            sudo ls -dt $BACKUP_DIR/* | tail -n +3 | xargs rm -rf || true
+
+            # Step 2: Deploy New Version
+            sudo rm -rf $TEMP_DIR
+            sudo mkdir -p $TEMP_DIR
+            cd /home/ubuntu/frontend
+
+            git reset --hard
+            git clean -fd
+            git pull origin main || { echo "Git pull failed"; exit 1; }
+
+            export NVM_DIR=$HOME/.nvm
+            source $NVM_DIR/nvm.sh
+            nvm use default
+            npm install --no-audit --no-fund
+            npm run build
+
+            sudo cp -r build/* $TEMP_DIR/
+
+            # Ensure proper permissions
+            sudo chown -R www-data:www-data $TEMP_DIR
+
+            # Remove old static assets before deploying
+            sudo rm -rf $APP_DIR/static
+
+            # Use rsync to avoid issues with moving directories
+            sudo rsync -av --delete $TEMP_DIR/ $APP_DIR/
+
+            sudo systemctl reload nginx
+
+            # Step 3: Health Check (Fail Fast)
+            sleep 10  # Wait a few seconds before checking
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTHCHECK_URL || echo "000")
+            
+            if [ "$STATUS_CODE" -ne 200 ]; then
+              echo "Deployment failed! Rolling back..."
+              sudo rsync -av --delete $BACKUP_DIR/html_backup_$TIMESTAMP/ $APP_DIR/
+              sudo systemctl reload nginx
+              exit 1
+            fi
+
+            echo "Deployment successful!"
+          EOF
