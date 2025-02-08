@@ -10,6 +10,6 @@ export const fileToBase64 =(file, callback) =>{
 
 //to set the date
 export const toDateStr=(dt)=>{
-    const m = dt.getMonth()+1;
+    // const m = dt.getMonth()+1;
     return (dt.getFullYear() + '-' + m + '-' + dt.getDate());
 }
